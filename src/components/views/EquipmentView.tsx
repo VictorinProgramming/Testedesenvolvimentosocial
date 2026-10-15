@@ -319,11 +319,31 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({ onNavigate, curren
               <a
                 href={`/api/agent/install.bat?serverUrl=${encodeURIComponent(window.location.origin)}`}
                 download="Instalar-Agente-GIHS.bat"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-blue-300 hover:text-white transition-all cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-blue-300 hover:text-white transition-all cursor-pointer shadow-sm"
                 title="Baixar executável do Agente (.bat) para instalar neste computador"
               >
                 <Download className="w-3.5 h-3.5 text-blue-400" />
-                <span>Baixar Agente (.bat)</span>
+                <span>Agente (.bat)</span>
+              </a>
+
+              <a
+                href={`/api/agent/install.cmd?serverUrl=${encodeURIComponent(window.location.origin)}`}
+                download="Instalar-Agente-GIHS.cmd"
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-indigo-300 hover:text-white transition-all cursor-pointer shadow-sm"
+                title="Baixar executável do Agente (.cmd sem restrições de download)"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-400" />
+                <span>.cmd</span>
+              </a>
+
+              <a
+                href={`/api/agent/install.ps1?download=true&serverUrl=${encodeURIComponent(window.location.origin)}`}
+                download="Instalar-Agente-GIHS.ps1"
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-300 hover:text-white transition-all cursor-pointer shadow-sm"
+                title="Baixar script PowerShell (.ps1)"
+              >
+                <Download className="w-3.5 h-3.5 text-purple-400" />
+                <span>.ps1</span>
               </a>
             </>
           )}

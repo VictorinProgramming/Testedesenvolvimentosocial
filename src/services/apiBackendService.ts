@@ -180,13 +180,30 @@ export class ApiBackendService {
     });
   }
 
-  // Ponto Records
-  async getPontoRecords(limit = 100): Promise<{ success: boolean; data: any[] }> {
-    return this.request(`/ponto?limit=${limit}`);
+  // Ponto Records (PostgreSQL REP-P)
+  async getPontoRecords(options?: { limit?: number; userId?: string; name?: string; month?: string; date?: string } | number): Promise<{ success: boolean; data: any[] }> {
+    if (typeof options === 'number') {
+      return this.request(`/ponto?limit=${options}`);
+    }
+    const limit = options?.limit || 1000;
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    if (options?.userId) params.set('userId', options.userId);
+    if (options?.name) params.set('name', options.name);
+    if (options?.month) params.set('month', options.month);
+    if (options?.date) params.set('date', options.date);
+    return this.request(`/ponto?${params.toString()}`);
   }
 
-  async getPontoByUserId(userId: string, limit = 50): Promise<{ success: boolean; data: any[] }> {
+  async getPontoByUserId(userId: string, limit = 500): Promise<{ success: boolean; data: any[] }> {
     return this.request(`/ponto/user/${userId}?limit=${limit}`);
+  }
+
+  async seedMonthPonto(userId?: string, month?: string): Promise<{ success: boolean; inserted: number; message: string }> {
+    return this.request('/ponto/seed-month', {
+      method: 'POST',
+      body: JSON.stringify({ userId, month }),
+    });
   }
 
   async createPontoRecord(record: Partial<PontoRecord>): Promise<{ success: boolean; data: any }> {
@@ -215,6 +232,17 @@ export class ApiBackendService {
         city: record.location?.city,
         state: record.location?.state,
       }),
+    });
+  }
+
+  async getPontoConfig(): Promise<{ success: boolean; data: any }> {
+    return this.request('/ponto/config');
+  }
+
+  async updatePontoConfig(config: any): Promise<{ success: boolean; data: any; message?: string }> {
+    return this.request('/ponto/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
     });
   }
 
@@ -261,6 +289,37 @@ export class ApiBackendService {
 
   async clearTickets(): Promise<{ success: boolean; message: string }> {
     return this.request('/tickets/clear', { method: 'POST' });
+  }
+
+  // Clientes & Secretarias Municipais (Joinville)
+  async getClients(): Promise<{ success: boolean; data: any[]; count?: number }> {
+    return this.request('/clients');
+  }
+
+  async getClientById(id: string): Promise<{ success: boolean; data: any }> {
+    return this.request(`/clients/${id}`);
+  }
+
+  async createClient(client: any): Promise<{ success: boolean; data: any }> {
+    return this.request('/clients', {
+      method: 'POST',
+      body: JSON.stringify(client),
+    });
+  }
+
+  async updateClient(id: string, updates: any): Promise<{ success: boolean; data: any }> {
+    return this.request(`/clients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteClient(id: string): Promise<{ success: boolean }> {
+    return this.request(`/clients/${id}`, { method: 'DELETE' });
+  }
+
+  async seedClients(): Promise<{ success: boolean; seededCount?: number; data?: any[] }> {
+    return this.request('/clients/seed', { method: 'POST' });
   }
 
   // Knowledge Base (Base de Conhecimento)
@@ -714,6 +773,19 @@ export class ApiBackendService {
     message: string;
   }> {
     return this.request(`/inventory-agents/${id}/force-scan`, {
+      method: 'POST',
+      headers: {
+        'x-user-id': currentUser?.id || '',
+        'x-user-role': currentUser?.userRole || ''
+      }
+    });
+  }
+
+  async forceInventoryAgentHeartbeat(id: string, currentUser?: Collaborator): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return this.request(`/inventory-agents/${id}/force-heartbeat`, {
       method: 'POST',
       headers: {
         'x-user-id': currentUser?.id || '',

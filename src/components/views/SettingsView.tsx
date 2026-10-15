@@ -45,6 +45,7 @@ import { evaluatePassword } from '../../utils/passwordPolicy';
 import { GIHSLogo } from '../GIHSLogo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSystemLogo } from '../../hooks/useSystemLogo';
+import { PontoConfigPanel } from './ponto/PontoConfigPanel';
 
 interface SettingsViewProps {
   currentUser: Collaborator;
@@ -165,11 +166,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       notes: 'Biometria facial padrão cadastrada'
     }
   );
-
-  // Ponto parameters
-  const [tolerance, setTolerance] = useState(85);
-  const [requireGps, setRequireGps] = useState(true);
-  const [antiSpoofing, setAntiSpoofing] = useState(true);
 
   // PostgreSQL Migration states
   const [copiedSql, setCopiedSql] = useState<string | null>(null);
@@ -1637,97 +1633,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Tab 3: Parâmetros de Ponto */}
       {activeTab === 'ponto' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm max-w-3xl space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Sliders className="w-5 h-5 text-[#37558d]" />
-              Parâmetros de Tolerância & Regras do Ponto
-            </h2>
-            <span className="text-xs font-bold text-slate-500 font-mono">
-              Portaria 671 MTE
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            {/* Tolerance slider */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-bold text-slate-800">
-                  Margem de Tolerância Biométrica Facial
-                </label>
-                <span className="text-xs font-bold font-mono text-[#37558d] bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {tolerance}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="75"
-                max="99"
-                value={tolerance}
-                onChange={(e) => setTolerance(Number(e.target.value))}
-                className="w-full accent-[#37558d] cursor-pointer"
-              />
-              <p className="text-[11px] text-slate-500">
-                Pontuações iguais ou superiores a {tolerance}% confirmarão a identidade do colaborador automaticamente.
-              </p>
-            </div>
-
-            {/* GPS Toggle */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-800">
-                  Exigir Geolocalização GPS nas Batidas
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Captura coordenadas de satélite ou IP da rede para comprovação de presença.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRequireGps(!requireGps)}
-                className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${requireGps ? 'bg-[#37558d]' : 'bg-slate-300'
-                  }`}
-              >
-                <span
-                  className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform shadow-xs ${requireGps ? 'right-0.5' : 'left-0.5'
-                    }`}
-                ></span>
-              </button>
-            </div>
-
-            {/* Anti-Spoofing Toggle */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-800">
-                  Detecção de Vivacidade (Anti-Spoofing Facial)
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Impede o uso de fotos estáticas ou vídeos de tela para burlar a biometria.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAntiSpoofing(!antiSpoofing)}
-                className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${antiSpoofing ? 'bg-[#37558d]' : 'bg-slate-300'
-                  }`}
-              >
-                <span
-                  className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform shadow-xs ${antiSpoofing ? 'right-0.5' : 'left-0.5'
-                    }`}
-                ></span>
-              </button>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-slate-100 flex justify-end">
-            <button
-              onClick={() => alert('Parâmetros salvos com sucesso!')}
-              className="px-5 py-2.5 bg-[#37558d] hover:bg-[#2e4775] text-white rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer shadow-sm"
-            >
-              <Save className="w-4 h-4" />
-              <span>Salvar Parâmetros</span>
-            </button>
-          </div>
+        <div className="max-w-5xl space-y-4">
+          <PontoConfigPanel currentUser={currentUser} />
         </div>
       )}
 

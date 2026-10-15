@@ -306,11 +306,11 @@ function AppContent() {
       case 'espelho_ponto':
         return <TimeCardMirrorView currentUser={currentUser} onNavigate={setCurrentScreen} />;
       case 'gestao_ponto':
-        return <PontoAdminView onNavigate={setCurrentScreen} />;
+        return <PontoAdminView onNavigate={setCurrentScreen} currentUser={currentUser} />;
       case 'relatorios':
         return <ReportsView />;
       case 'clientes':
-        return <ClientsView />;
+        return <ClientsView onNavigate={setCurrentScreen} currentUser={currentUser} />;
       case 'chamados':
         return (
           <TicketsView

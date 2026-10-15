@@ -53,5 +53,86 @@ export const settingsRepository = {
       updated_at: new Date().toISOString()
     };
     return await this.set('system_logo', payload);
+  },
+
+  async getPontoConfig(): Promise<any> {
+    const val = await this.get('ponto_config');
+    return val || {
+      workSchedule: {
+        standardEntry: '08:00',
+        standardBreakStart: '12:00',
+        standardBreakEnd: '13:00',
+        standardExit: '18:00',
+        weeklyHours: 44,
+        dailyHours: 8.8,
+        scheduleType: 'CLT_PADRAO',
+        workDays: ['SEG', 'TER', 'QUA', 'QUI', 'SEX'],
+        minimumBreakMinutes: 60
+      },
+      tolerances: {
+        entryToleranceMinutes: 5,
+        dailyToleranceMinutes: 10,
+        exitToleranceMinutes: 5,
+        antiDuplicateMinutes: 2,
+        allowEarlyPunch: true,
+        notifyApproachingBreakEnd: true
+      },
+      biometry: {
+        minConfidenceScore: 85,
+        requireAntiSpoofing: true,
+        strictMode: false,
+        allowFallbackManual: true,
+        requireCameraFlashValidation: true
+      },
+      geofencing: {
+        requireGps: true,
+        allowExternalPunch: true,
+        maxAccuracyMeters: 100,
+        authorizedLocations: [
+          {
+            id: 'loc-matriz',
+            name: 'Sede Matriz GIHS - São Paulo',
+            address: 'Av. Paulista, 1000 - Bela Vista, São Paulo - SP',
+            latitude: -23.561684,
+            longitude: -46.655981,
+            radiusMeters: 250,
+            isHeadquarters: true
+          },
+          {
+            id: 'loc-datacenter',
+            name: 'Polo Operacional & Data Center',
+            address: 'Rua do Suporte Técnico, 250 - Tamboré, Barueri - SP',
+            latitude: -23.501234,
+            longitude: -46.852345,
+            radiusMeters: 200,
+            isHeadquarters: false
+          }
+        ],
+        corporateIpWhitelist: ['189.40.12.98', '201.55.10.22', '127.0.0.1']
+      },
+      overtimeAndBank: {
+        regime: 'BANCO_DE_HORAS',
+        maxDailyOvertimeMinutes: 120,
+        weekdayOvertimePercentage: 50,
+        weekendOvertimePercentage: 100,
+        bankCompensationMonths: 6,
+        closingDayOfMonth: 25
+      },
+      adjustmentPolicies: {
+        maxDaysToRequestAdjustment: 2,
+        requireAttachmentForMedicalLeave: true,
+        autoApproveWithinTolerance: false,
+        approverRole: 'GESTOR_OU_ADMIN'
+      },
+      updated_at: new Date().toISOString()
+    };
+  },
+
+  async setPontoConfig(config: any): Promise<any> {
+    const payload = {
+      ...config,
+      updated_at: new Date().toISOString()
+    };
+    return await this.set('ponto_config', payload);
   }
 };

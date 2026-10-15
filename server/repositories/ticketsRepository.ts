@@ -94,6 +94,173 @@ export function mapRowToSupportTicket(row: any): SupportTicket {
 }
 
 export const ticketsRepository = {
+  async seedInitialTickets(): Promise<void> {
+    const initialTickets = [
+      {
+        id: 'CHM-2026-1021',
+        protocol: 'GIHS-2026-1021',
+        client: 'Secretaria Municipal de Educação (SEMED)',
+        subject: 'Falha de Conectividade no Laboratório de Informática da EM Prof. Orestes Guimarães',
+        description: 'Switch de distribuição do bloco B apresentou perda intermitente de pacotes afetando 32 computadores durante aplicação de prova online.',
+        sector: 'N2',
+        service_classification: 'Configuração e Troca de Switch / VLAN Escolar',
+        priority: 'ALTA',
+        status: 'EM_ATENDIMENTO',
+        assigned_to: 'Guilherme Hirata Satoshi',
+        assigned_avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Profª. Helena Souza',
+        requester_email: 'educacao.suporte@joinville.sc.gov.br',
+        contact_email: 'educacao.suporte@joinville.sc.gov.br',
+        open_time: '08:30',
+        sla_hours: 2
+      },
+      {
+        id: 'CHM-2026-1045',
+        protocol: 'GIHS-2026-1045',
+        client: 'Secretaria Municipal de Saúde (SMS)',
+        subject: 'Lentidão Crítica no Acesso ao Banco de Dados e-SUS na UPA Leste',
+        description: 'Médicos e triagem relatando timeout de 45s ao salvar prontuários de atendimento de urgência. Suspeita de lock em transação no PostgreSQL de produção.',
+        sector: 'N3',
+        service_classification: 'Otimização de Query e Pool de Conexões DBA',
+        priority: 'CRITICA',
+        status: 'EM_ATENDIMENTO',
+        assigned_to: 'Victor Martins',
+        assigned_avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Dr. Roberto Silveira',
+        requester_email: 'saude.ti@joinville.sc.gov.br',
+        contact_email: 'saude.ti@joinville.sc.gov.br',
+        open_time: '09:15',
+        sla_hours: 1
+      },
+      {
+        id: 'CHM-2026-1082',
+        protocol: 'GIHS-2026-1082',
+        client: 'Secretaria da Fazenda (SEFAZ)',
+        subject: 'Revisão e Renovação de Certificado Digital A1 ICP-Brasil para NFS-e',
+        description: 'Certificado raiz utilizado pelo WebService de emissão de Nota Fiscal de Serviços Eletrônica expira em 5 dias úteis. Necessário deploy no cluster seguro.',
+        sector: 'Segurança & LGPD',
+        service_classification: 'Gestão de Certificados Digitais e Criptografia',
+        priority: 'ALTA',
+        status: 'ABERTO',
+        assigned_to: 'Victor Hugo Estevão',
+        assigned_avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Dr. Renato Farias',
+        requester_email: 'fazenda.ti@joinville.sc.gov.br',
+        contact_email: 'fazenda.ti@joinville.sc.gov.br',
+        open_time: '10:00',
+        sla_hours: 2
+      },
+      {
+        id: 'CHM-2026-1110',
+        protocol: 'GIHS-2026-1110',
+        client: 'Secretaria de Administração e Planejamento (SAP)',
+        subject: 'Tombamento e Inventário Patrimonial de 40 Novos Notebooks Dell Latitude',
+        description: 'Entrada física no Almoxarifado Central. Gerar etiquetas de tombamento com QR Code e vincular termos de cautela aos novos servidores.',
+        sector: 'Patrimônio',
+        service_classification: 'Tombamento e Cadastro Patrimonial',
+        priority: 'MEDIA',
+        status: 'ABERTO',
+        assigned_to: 'Karina Feller',
+        assigned_avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Carlos Mendes',
+        requester_email: 'administracao.ti@joinville.sc.gov.br',
+        contact_email: 'administracao.ti@joinville.sc.gov.br',
+        open_time: '10:45',
+        sla_hours: 4
+      },
+      {
+        id: 'CHM-2026-1155',
+        protocol: 'GIHS-2026-1155',
+        client: 'Secretaria de Proteção Civil e Segurança Pública (SECON)',
+        subject: 'Alinhamento de Rádio Digital e Monitoramento de Câmera OCR Rua Dr. João Colin',
+        description: 'Câmera 14 do cerco de segurança perdeu comunicação telemática com a sala do CICC após tempestade de vento na madrugada.',
+        sector: 'N2',
+        service_classification: 'Restauração de Link de Rádio e Fibra',
+        priority: 'ALTA',
+        status: 'EM_ATENDIMENTO',
+        assigned_to: 'Matheus',
+        assigned_avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Comandante Eduardo Silveira',
+        requester_email: 'secon.operacoes@joinville.sc.gov.br',
+        contact_email: 'secon.operacoes@joinville.sc.gov.br',
+        open_time: '11:20',
+        sla_hours: 2
+      },
+      {
+        id: 'CHM-2026-1190',
+        protocol: 'GIHS-2026-1190',
+        client: 'Companhia Águas de Joinville (CAJ)',
+        subject: 'Telemetria do Sensor de Pressão da Estação de Tratamento Cubatão',
+        description: 'Falha intermitente na telemetria do canal Modbus/TCP enviando dados com latência para o SCADA central.',
+        sector: 'N3',
+        service_classification: 'Diagnóstico de Rede Industrial e Automação',
+        priority: 'ALTA',
+        status: 'ABERTO',
+        assigned_to: 'Guilherme Hirata Satoshi',
+        assigned_avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Engª. Larissa Moretto',
+        requester_email: 'ti.redes@aguasdejoinville.com.br',
+        contact_email: 'ti.redes@aguasdejoinville.com.br',
+        open_time: '12:00',
+        sla_hours: 2
+      },
+      {
+        id: 'CHM-2026-1230',
+        protocol: 'GIHS-2026-1230',
+        client: 'Hospital Municipal São José (HMSJ)',
+        subject: 'Integração de Estação de Imagem PACS com Tomógrafo da Emergência',
+        description: 'Estação de trabalho do setor de imagem não está consolidando o DICOM no servidor central após upgrade de firmware.',
+        sector: 'N2',
+        service_classification: 'Suporte a Sistemas Hospitalares e PACS',
+        priority: 'CRITICA',
+        status: 'EM_ATENDIMENTO',
+        assigned_to: 'Victor Martins',
+        assigned_avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Dr. Alexandre Bittencourt',
+        requester_email: 'hmsj.ti@joinville.sc.gov.br',
+        contact_email: 'hmsj.ti@joinville.sc.gov.br',
+        open_time: '13:10',
+        sla_hours: 1
+      },
+      {
+        id: 'CHM-2026-1275',
+        protocol: 'GIHS-2026-1275',
+        client: 'Departamento de Trânsito de Joinville (DETRANS)',
+        subject: 'Sincronização de Semáforos Inteligentes no Corredor da Av. Rolf Colin',
+        description: 'Ajuste fino no plano ciclo de temporização semafórica para liberar fluxo durante horário de pico matutino e vespertino.',
+        sector: 'N1',
+        service_classification: 'Configuração de Controladores Semafóricos',
+        priority: 'MEDIA',
+        status: 'RESOLVIDO',
+        assigned_to: 'Rebeca Lara',
+        assigned_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        requester_name: 'Inspetor Vanderlei Santos',
+        requester_email: 'detrans.operacoes@joinville.sc.gov.br',
+        contact_email: 'detrans.operacoes@joinville.sc.gov.br',
+        open_time: '07:40',
+        sla_hours: 4
+      }
+    ];
+
+    for (const t of initialTickets) {
+      await query(`
+        INSERT INTO tickets (
+          id, protocol, client, subject, description, sector, service_classification,
+          priority, status, assigned_to, assigned_avatar,
+          requester_name, requester_email, contact_email, open_time, sla_hours
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          $8::enum_ticket_priority, $9::enum_ticket_status, $10, $11,
+          $12, $13, $14, $15, $16
+        ) ON CONFLICT (id) DO NOTHING;
+      `, [
+        t.id, t.protocol, t.client, t.subject, t.description, t.sector, t.service_classification,
+        t.priority, t.status, t.assigned_to, t.assigned_avatar,
+        t.requester_name, t.requester_email, t.contact_email, t.open_time, t.sla_hours
+      ]);
+    }
+  },
+
   async findAll(status?: string): Promise<SupportTicket[]> {
     if (status) {
       const normalized = normalizeStatus(status);
@@ -108,6 +275,16 @@ export const ticketsRepository = {
       SELECT * FROM tickets
       ORDER BY created_at DESC;
     `);
+
+    if (res.rows.length === 0) {
+      await this.seedInitialTickets();
+      const after = await query<any>(`
+        SELECT * FROM tickets
+        ORDER BY created_at DESC;
+      `);
+      return after.rows.map(mapRowToSupportTicket);
+    }
+
     return res.rows.map(mapRowToSupportTicket);
   },
 

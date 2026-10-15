@@ -20,12 +20,22 @@ import {
   getPontoRecords,
   getPontoByUserId,
   createPontoRecord,
+  seedPontoMonth,
+  getPontoConfig,
+  updatePontoConfig,
+  resetPontoConfig,
   getTickets,
   getTicketById,
   createTicket,
   updateTicket,
   deleteTicket,
   clearTickets,
+  getClients,
+  getClientById,
+  createClient,
+  updateClient,
+  deleteClient,
+  seedClients,
   getKnowledgeArticles,
   getKnowledgeArticleById,
   createKnowledgeArticle,
@@ -178,6 +188,10 @@ app.post('/api/sectors', createSector);
 app.get('/api/ponto', getPontoRecords);
 app.get('/api/ponto/user/:userId', getPontoByUserId);
 app.post('/api/ponto', createPontoRecord);
+app.post('/api/ponto/seed-month', seedPontoMonth);
+app.get('/api/ponto/config', getPontoConfig);
+app.put('/api/ponto/config', updatePontoConfig);
+app.post('/api/ponto/config/reset', resetPontoConfig);
 
 // Tickets / Chamados CRUD Routes
 app.get('/api/tickets', getTickets);
@@ -186,6 +200,14 @@ app.get('/api/tickets/:id', getTicketById);
 app.post('/api/tickets', createTicket);
 app.put('/api/tickets/:id', updateTicket);
 app.delete('/api/tickets/:id', deleteTicket);
+
+// Clientes & Secretarias Municipais (Rede de Joinville) CRUD Routes
+app.get('/api/clients', getClients);
+app.post('/api/clients/seed', seedClients);
+app.get('/api/clients/:id', getClientById);
+app.post('/api/clients', createClient);
+app.put('/api/clients/:id', updateClient);
+app.delete('/api/clients/:id', deleteClient);
 
 // Knowledge Base / Base de Conhecimento CRUD Routes
 app.get('/api/knowledge', getKnowledgeArticles);
@@ -260,6 +282,8 @@ app.get('/api/agent/install-service.ps1', inventoryAgentController.serveInstallS
 app.get('/api/agent/install.bat', inventoryAgentController.serveInstallBat);
 app.get('/api/agent/install.cmd', inventoryAgentController.serveInstallBat);
 app.get('/api/agent/download', inventoryAgentController.serveInstallBat);
+app.get('/api/agent/force-heartbeat.bat', inventoryAgentController.serveForceHeartbeatBat);
+app.get('/api/agent/force-heartbeat.cmd', inventoryAgentController.serveForceHeartbeatBat);
 app.post('/api/agent/v1/heartbeat', inventoryAgentController.handleHeartbeat);
 app.post('/api/agent/v1/inventory', inventoryAgentController.handleIngestInventory);
 app.post('/api/agent/v1/test-agent', inventoryAgentController.handleTestAgent);
@@ -272,6 +296,7 @@ app.get('/api/inventory-agents/:id', inventoryAgentController.requireSuperAdmin,
 app.get('/api/inventory-agents/:id/software', inventoryAgentController.requireSuperAdmin, inventoryAgentController.getAgentSoftware);
 app.get('/api/inventory-agents/:id/history', inventoryAgentController.requireSuperAdmin, inventoryAgentController.getAgentHistory);
 app.post('/api/inventory-agents/:id/force-scan', inventoryAgentController.requireSuperAdmin, inventoryAgentController.forceScan);
+app.post('/api/inventory-agents/:id/force-heartbeat', inventoryAgentController.requireSuperAdmin, inventoryAgentController.forceHeartbeat);
 app.post('/api/inventory-agents/conflicts/:id/resolve', inventoryAgentController.requireSuperAdmin, inventoryAgentController.resolveConflict);
 
 
@@ -279,8 +304,8 @@ async function startServer() {
   const httpServer = http.createServer(app);
 
   if (!isProduction) {
-    // Vite middleware integration in Development
-    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+    // Vite middleware integration in Development (HMR is disabled in AI Studio)
+    const isHmrDisabled = process.env.DISABLE_HMR !== 'false';
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {

@@ -28,6 +28,7 @@ import {
   ArrowUpDown,
   Sparkles,
   RotateCw,
+  RotateCcw,
   Box,
   Key,
   FolderOpen,
@@ -258,6 +259,31 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [copiedFullScript, setCopiedFullScript] = useState(false);
+  const [forceHeartbeatModalAgent, setForceHeartbeatModalAgent] = useState<InventoryAgent | null>(null);
+  const [copiedHeartbeatCmd, setCopiedHeartbeatCmd] = useState(false);
+
+  const handleDownloadForceHeartbeatScript = async (format: 'bat' | 'cmd' = 'bat') => {
+    try {
+      setIsDownloading(true);
+      const endpoint = `/api/agent/force-heartbeat.${format}?serverUrl=${encodeURIComponent(window.location.origin)}`;
+      const resp = await fetch(endpoint);
+      if (!resp.ok) throw new Error('Não foi possível obter o arquivo');
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Forcar-Heartbeat.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast(`Arquivo Forcar-Heartbeat.${format} baixado com sucesso!`);
+    } catch {
+      window.open(`/api/agent/force-heartbeat.${format}?serverUrl=${encodeURIComponent(window.location.origin)}`, '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const handleDownloadScript = async (format: 'bat' | 'cmd' | 'ps1') => {
     try {
@@ -389,6 +415,26 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
         loadData();
       } else {
         showToast('Erro ao solicitar varredura.');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Falha na comunicação.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleForceHeartbeat = async (agentId: string) => {
+    setIsActionLoading(true);
+    try {
+      const res = await apiBackendService.forceInventoryAgentHeartbeat(agentId, currentUser);
+      if (res && res.success) {
+        showToast(res.message || 'Heartbeat forçado e atualizado com sucesso no servidor!');
+        loadData();
+        if (selectedAgent && selectedAgent.id === agentId) {
+          setSelectedAgent(prev => prev ? { ...prev, agent_status: 'ONLINE', last_heartbeat: new Date().toISOString() } : null);
+        }
+      } else {
+        showToast('Erro ao forçar heartbeat.');
       }
     } catch (err: any) {
       showToast(err.message || 'Falha na comunicação.');
@@ -531,14 +577,14 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
 
           <button
             onClick={() => {
-              const cmd = `$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`;
+              const cmd = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`;
               navigator.clipboard.writeText(cmd);
               setCopiedCmd(true);
-              showToast('Comando PowerShell (com Proxy Auto-Auth) copiado!');
+              showToast('Comando PowerShell Universal copiado! (Domínio & Fora de Domínio)');
               setTimeout(() => setCopiedCmd(false), 3000);
             }}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
-            title="Copiar comando PowerShell com auto-detecção de proxy corporativo e credenciais de rede"
+            title="Copiar comando PowerShell universal (funciona dentro e fora de domínio, com ou sem proxy)"
           >
             {copiedCmd ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
             <span>{copiedCmd ? 'Copiado!' : 'Copiar 1-Linha PS'}</span>
@@ -592,7 +638,7 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
             <Activity className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-black text-emerald-400">{metrics?.onlineCount ?? 0}</div>
-          <div className="text-[11px] text-slate-400">Heartbeat ativo (60s)</div>
+          <div className="text-[11px] text-slate-400">Heartbeat a cada 1:00 hora</div>
         </div>
 
         <div style={{ backgroundColor: cardColor }} className="p-4 rounded-2xl border border-slate-800 space-y-1 shadow-md">
@@ -674,6 +720,51 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
       {/* TAB 1: LISTA DE DISPOSITIVOS INVENTARIADOS */}
       {activeTab === 'agents' && (
         <div className="space-y-4">
+          {/* BANNER DE ALERTA: COMPUTADORES COM ÚLTIMO HEARTBEAT PENDENTE (1:00 HORA) */}
+          {agents.some(a => a.agent_status === 'OFFLINE' || (a.last_heartbeat && (Date.now() - new Date(a.last_heartbeat).getTime()) > 60 * 60 * 1000)) && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/70 via-slate-900 to-pink-950/50 border border-amber-600/40 text-amber-200 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">
+              <div className="flex items-start md:items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 border border-amber-500/30">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-sm flex items-center gap-2">
+                    <span>Último Heartbeat não coletado no ciclo de 1:00 hora</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Ciclo: 1h Automático
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    O agente no Windows coleta dados de hardware e transmite o pulso a cada 1:00 hora a partir de <code className="text-pink-300 bg-slate-950 px-1 py-0.5 rounded font-mono text-[10px] border border-slate-800">C:\ProgramData\GIHS\Agent\GIHS-Inventario-Real.json</code>.
+                    Caso o pulso não tenha sido recebido, acesse o computador instalado para forçar o heartbeat em tempo real.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                <button
+                  onClick={() => {
+                    const targetAgent = agents.find(a => a.agent_status === 'OFFLINE' || (a.last_heartbeat && (Date.now() - new Date(a.last_heartbeat).getTime()) > 60 * 60 * 1000)) || agents[0];
+                    if (targetAgent) setForceHeartbeatModalAgent(targetAgent);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Activity className="w-4 h-4" />
+                  <span>Acessar Agente e Forçar Heartbeat</span>
+                </button>
+                <button
+                  onClick={() => handleDownloadForceHeartbeatScript('bat')}
+                  disabled={isDownloading}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Baixar Forcar-Heartbeat.bat para executar na máquina"
+                >
+                  <Download className="w-3.5 h-3.5 text-pink-400" />
+                  <span>Baixar .BAT</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* BARRA DE FILTROS & BUSCA */}
           <div style={{ backgroundColor: cardColor }} className="p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
             <div className="flex flex-col md:flex-row items-center gap-3">
@@ -817,14 +908,14 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
 
                             <button
                               onClick={() => {
-                                const cmd = `$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`;
+                                const cmd = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`;
                                 navigator.clipboard.writeText(cmd);
                                 setCopiedCmd(true);
-                                showToast('Comando PowerShell (com Proxy Auto-Auth) copiado!');
+                                showToast('Comando PowerShell Universal copiado!');
                                 setTimeout(() => setCopiedCmd(false), 3000);
                               }}
                               className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700 inline-flex items-center gap-2 cursor-pointer"
-                              title="Copiar comando de 1-linha com suporte total a proxy corporativo e credenciais integradas"
+                              title="Copiar comando de 1-linha compatível com Domínio, Workgroup e computadores fora de domínio"
                             >
                               {copiedCmd ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
                               <span>{copiedCmd ? 'Comando Copiado!' : 'Copiar 1-Linha PS'}</span>
@@ -977,8 +1068,17 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                           <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
                               <button
+                                onClick={() => setForceHeartbeatModalAgent(agent)}
+                                className="px-2.5 py-1 rounded-xl bg-pink-950/60 hover:bg-pink-900 border border-pink-700/60 text-pink-300 hover:text-white transition-all flex items-center gap-1.5 text-[11px] font-bold shadow-sm cursor-pointer"
+                                title="Forçar Heartbeat em tempo real (Origem: C:\ProgramData\GIHS\Agent\GIHS-Inventario-Real.json)"
+                              >
+                                <Activity className="w-3.5 h-3.5 text-pink-400" />
+                                <span>Forçar Heartbeat</span>
+                              </button>
+
+                              <button
                                 onClick={() => handleOpenDrawer(agent)}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
                                 title="Ver Detalhes Técnicos Completos"
                               >
                                 <ChevronRight className="w-4 h-4" />
@@ -1092,25 +1192,35 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={`/api/agent/install.bat?serverUrl=${encodeURIComponent(window.location.origin)}`}
                   download="Instalar-Agente-GIHS.bat"
                   className="px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-md flex items-center gap-2 cursor-pointer border border-blue-400/40"
-                  title="Baixar executável instalador em lote (.BAT com elevação automática de Administrador)"
+                  title="Baixar instalador em lote (.BAT com elevação automática de Administrador)"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Baixar Instalador .BAT (1-Clique)</span>
+                  <span>Baixar .BAT (1-Clique)</span>
+                </a>
+
+                <a
+                  href={`/api/agent/install.cmd?serverUrl=${encodeURIComponent(window.location.origin)}`}
+                  download="Instalar-Agente-GIHS.cmd"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md flex items-center gap-2 cursor-pointer border border-indigo-400/40"
+                  title="Baixar instalador .CMD (sem bloqueio de navegadores)"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Baixar .CMD</span>
                 </a>
 
                 <a
                   href={`/api/agent/install.ps1?download=true&serverUrl=${encodeURIComponent(window.location.origin)}`}
-                  download="install-service.ps1"
+                  download="Instalar-Agente-GIHS.ps1"
                   className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-2 cursor-pointer"
                   title="Baixar script de instalação direta em PowerShell"
                 >
                   <Download className="w-4 h-4 text-purple-400" />
-                  <span>Script PowerShell (.ps1)</span>
+                  <span>Script .PS1</span>
                 </a>
               </div>
             </div>
@@ -1120,15 +1230,15 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                 <div className="text-xs font-bold text-slate-200 flex items-center gap-2">
                   <span>1. Execução Imediata via PowerShell (Como Administrador):</span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950 text-blue-300 border border-blue-800">
-                    Auto-Proxy & NTLM OK
+                    Universal: Domínio & Workgroup
                   </span>
                 </div>
                 <button
                   onClick={() => {
-                    const cmd = `$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`;
+                    const cmd = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`;
                     navigator.clipboard.writeText(cmd);
                     setCopiedCmd(true);
-                    showToast('Comando PowerShell (com Proxy Auto-Auth) copiado!');
+                    showToast('Comando PowerShell Universal copiado!');
                     setTimeout(() => setCopiedCmd(false), 3000);
                   }}
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-all border border-slate-700"
@@ -1139,10 +1249,10 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
               </div>
 
               <pre className="p-4 rounded-xl bg-slate-950 font-mono text-xs text-emerald-400 border border-slate-800 overflow-x-auto select-all">
-                {`$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`}
+                {`[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`}
               </pre>
               <div className="text-[11px] text-slate-400">
-                * Detecta automaticamente qualquer proxy da rede corporativa (WPAD, PAC, manual, NTLM/Kerberos) e resolve o erro 407. Se não houver proxy, conecta direto normalmente.
+                * 100% compatível com computadores em Domínio (AD), Workgroup, redes isoladas e computadores fora de domínio. Ativa TLS 1.2/1.3 nativo e comunica sem travar em proxy.
               </div>
 
               <div className="text-xs font-bold text-slate-200 pt-2">2. Arquivo de Configuração do Agente (appsettings.json):</div>
@@ -1244,6 +1354,16 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setForceHeartbeatModalAgent(selectedAgent)}
+                  disabled={isActionLoading}
+                  className="px-3 py-1.5 rounded-xl bg-pink-950/70 hover:bg-pink-900/90 text-pink-300 border border-pink-700/60 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-sm"
+                  title="Forçar Heartbeat a partir de C:\ProgramData\GIHS\Agent\GIHS-Inventario-Real.json"
+                >
+                  <Activity className="w-3.5 h-3.5 text-pink-400" />
+                  <span>Forçar Heartbeat</span>
+                </button>
+
                 <button
                   onClick={() => handleForceScan(selectedAgent.id)}
                   disabled={isActionLoading}
@@ -1608,22 +1728,40 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                   className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Baixar Executável (.bat)</span>
+                  <span>Baixar .BAT</span>
+                </a>
+
+                <a
+                  href={`/api/agent/install.cmd?serverUrl=${encodeURIComponent(window.location.origin)}`}
+                  download="Instalar-Agente-GIHS.cmd"
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar .CMD</span>
+                </a>
+
+                <a
+                  href={`/api/agent/install.ps1?download=true&serverUrl=${encodeURIComponent(window.location.origin)}`}
+                  download="Instalar-Agente-GIHS.ps1"
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 text-xs font-bold inline-flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar .PS1</span>
                 </a>
 
                 <button
                   type="button"
                   onClick={() => {
-                    const cmd = `$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`;
+                    const cmd = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`;
                     navigator.clipboard.writeText(cmd);
                     setCopiedCmd(true);
-                    showToast('Comando PowerShell (com Proxy Auto-Auth) copiado!');
+                    showToast('Comando PowerShell Universal copiado!');
                     setTimeout(() => setCopiedCmd(false), 3000);
                   }}
                   className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 border border-slate-700 cursor-pointer"
                 >
                   {copiedCmd ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-                  <span>{copiedCmd ? 'Copiado!' : 'Copiar 1-Linha PS (com Proxy)'}</span>
+                  <span>{copiedCmd ? 'Copiado!' : 'Copiar 1-Linha PS (Universal)'}</span>
                 </button>
               </div>
             </div>
@@ -1814,18 +1952,22 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span>Recursos Nativos Configurados Automaticamente:</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-300">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[11px] text-slate-300">
                   <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
-                    <span><strong>Ícone na Barra de Tarefas</strong> (Bandeja / Tray OCS)</span>
+                    <span><strong>Ícone na Bandeja</strong> (Estilo OCS)</span>
                   </div>
                   <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2">
                     <RotateCw className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span><strong>Inicialização no Boot</strong> (Inicia com o Windows)</span>
+                    <span><strong>Inicialização no Boot</strong> (Com o Windows)</span>
                   </div>
                   <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2">
                     <Lock className="w-4 h-4 text-purple-400 shrink-0" />
-                    <span><strong>Admin Pré-definido</strong> (Sem prompt UAC no boot)</span>
+                    <span><strong>Admin Pré-definido</strong> (Sem UAC no boot)</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span><strong>Reinício Opcional</strong> (Aplica no final)</span>
                   </div>
                 </div>
               </div>
@@ -1842,15 +1984,15 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300">
-                  Abra o <strong>PowerShell</strong> como Administrador e cole este comando de uma linha. Funciona em rede com ou sem proxy:
+                  Abra o <strong>PowerShell</strong> (ou Terminal) e cole este comando de uma linha. Funciona em máquinas em Domínio (AD), Workgroup e fora de rede de domínio:
                 </p>
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[11px] text-emerald-400 flex items-center justify-between gap-2 overflow-x-auto">
                   <span className="truncate">
-                    {`$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`}
+                    {`[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`}
                   </span>
                   <button
                     onClick={() => {
-                      const cmd = `$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultNetworkCredentials;[System.Net.WebRequest]::DefaultWebProxy=$p;irm -UseDefaultCredentials "${window.location.origin}/api/agent/install.ps1" | iex`;
+                      const cmd = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadString("${window.location.origin}/api/agent/install.ps1") | iex`;
                       navigator.clipboard.writeText(cmd);
                       setCopiedCmd(true);
                       showToast('Comando PowerShell copiado!');
@@ -2078,6 +2220,187 @@ export const InventoryAgentAdminView: React.FC<InventoryAgentAdminViewProps> = (
               >
                 {isImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 <span>{isImporting ? 'Sincronizando com PostgreSQL...' : 'Salvar no Inventário e Patrimônio'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE FORÇAR HEARTBEAT EM TEMPO REAL */}
+      {forceHeartbeatModalAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-pink-500/40 rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-pink-600/20 border border-pink-500/40 flex items-center justify-center text-pink-400">
+                  <Activity className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-white flex items-center gap-2">
+                    <span>Forçar Heartbeat em Tempo Real</span>
+                    <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-pink-950 text-pink-300 border border-pink-700">
+                      Ciclo: 1:00h
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Computador: <strong className="text-slate-200">{forceHeartbeatModalAgent.hostname}</strong> ({forceHeartbeatModalAgent.ip_address || 'IP n/d'})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setForceHeartbeatModalAgent(null)}
+                className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Card Informativo do Ciclo de 1:00 hora */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-pink-950/60 to-purple-950/60 border border-pink-500/30 text-xs text-pink-200 space-y-2">
+                <div className="font-bold flex items-center gap-2 text-white">
+                  <Clock className="w-4 h-4 text-pink-400" />
+                  <span>Configuração do Ciclo Automático e Origem Local:</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-300">
+                  <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
+                    <span className="text-slate-400">Intervalo Automático:</span>
+                    <div className="font-bold text-emerald-400">A cada 1:00 hora (Automático)</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
+                    <span className="text-slate-400">Último Heartbeat:</span>
+                    <div className="font-bold text-white">{formatRelativeTime(forceHeartbeatModalAgent.last_heartbeat)}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 sm:col-span-2 font-mono text-[10px] text-slate-300">
+                    <span className="text-slate-400 font-sans">Arquivo de Origem em Tempo Real:</span>
+                    <div className="text-pink-300 font-bold truncate">C:\ProgramData\GIHS\Agent\GIHS-Inventario-Real.json</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* OPÇÃO 1: NO COMPUTADOR INSTALADO */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                <div className="font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Opção 1: No Computador Instalado (Bandeja, Pasta Local ou Download)</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Caso acesse diretamente a máquina do usuário (presencialmente ou por RDP/AnyDesk), force o heartbeat imediatamente lendo o arquivo em tempo real:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400 pl-1">
+                  <li>
+                    Clique com o botão direito no ícone do <strong>GIHS Agent</strong> na barra de tarefas (ao lado do relógio ou na setinha <code className="text-slate-200">^</code>) e selecione <strong className="text-pink-400">"❤️ Forçar Heartbeat Agora (Sincronizar JSON Real)"</strong>.
+                  </li>
+                  <li>
+                    Ou acesse o atalho rápido dando duplo clique em: <code className="text-pink-300 font-mono text-[10px] bg-slate-900 px-1 py-0.5 rounded">C:\ProgramData\GIHS\Agent\Forcar-Heartbeat.bat</code>.
+                  </li>
+                  <li>
+                    O script lê <code className="text-pink-300 font-mono text-[10px]">C:\ProgramData\GIHS\Agent\GIHS-Inventario-Real.json</code> e sincroniza o computador como ONLINE no servidor.
+                  </li>
+                </ul>
+
+                <div className="pt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-slate-400">Baixar atalho para executar na máquina:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadForceHeartbeatScript('bat')}
+                    disabled={isDownloading}
+                    className="px-3 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    title="Baixar Forcar-Heartbeat.bat para executar na máquina"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Baixar Forcar-Heartbeat.bat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadForceHeartbeatScript('cmd')}
+                    disabled={isDownloading}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                    title="Baixar Forcar-Heartbeat.cmd para executar na máquina"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Baixar Forcar-Heartbeat.cmd</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* OPÇÃO 2: COMANDO RÁPIDO NO POWERSHELL DA MÁQUINA */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-blue-400" />
+                    <span>Opção 2: Comando PowerShell de 1-Linha na Máquina</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-700">
+                    Atalho Remoto
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Abra o PowerShell como Administrador e cole este comando para forçar a leitura do JSON e envio imediato:
+                </p>
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono text-[11px] text-emerald-400 flex items-center justify-between gap-2 overflow-x-auto">
+                  <span className="truncate">
+                    {`& "C:\\ProgramData\\GIHS\\Agent\\Forcar-Heartbeat.bat"`}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const cmd = `& "C:\\ProgramData\\GIHS\\Agent\\Forcar-Heartbeat.bat"`;
+                      navigator.clipboard.writeText(cmd);
+                      setCopiedHeartbeatCmd(true);
+                      showToast('Comando de forçar heartbeat copiado!');
+                      setTimeout(() => setCopiedHeartbeatCmd(false), 3000);
+                    }}
+                    className="shrink-0 p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
+                    title="Copiar Comando"
+                  >
+                    {copiedHeartbeatCmd ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* OPÇÃO 3: IMPORTAR O ARQUIVO JSON / FORÇAR NO SERVIDOR */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-pink-500/30 space-y-3">
+                <div className="font-bold text-white flex items-center gap-2">
+                  <Upload className="w-4 h-4 text-pink-400" />
+                  <span>Opção 3: Sincronizar pelo Painel Agora Mesmo</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Você pode forçar a reativação do heartbeat diretamente no servidor ou importar o arquivo salvo na máquina:
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      handleForceHeartbeat(forceHeartbeatModalAgent.id);
+                      setForceHeartbeatModalAgent(null);
+                    }}
+                    disabled={isActionLoading}
+                    className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Activity className="w-4 h-4" />
+                    <span>Forçar Heartbeat no Servidor Agora</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setForceHeartbeatModalAgent(null);
+                      setIsImportModalOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700 transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4 text-emerald-400" />
+                    <span>Carregar Arquivo GIHS-Inventario-Real.json</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setForceHeartbeatModalAgent(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>

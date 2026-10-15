@@ -23,16 +23,20 @@ interface CreateTicketModalProps {
   isOpen?: boolean;
   currentUser: Collaborator;
   prefilledSector?: string;
+  prefilledClient?: string;
   onClose: () => void;
   onSuccess: (newTicket: SupportTicket, message: string) => void;
 }
 
 const COMMON_CLIENTS = [
-  'TechCorp Brasil',
-  'Banco Ágata',
-  'Hospital Santa Clara',
-  'Varejo Express',
-  'LogTech Transportes',
+  'Secretaria de Educação (SEDUC)',
+  'Secretaria de Saúde (SES)',
+  'Secretaria da Fazenda (SEFAZ)',
+  'Secretaria de Administração e Planejamento (SAP)',
+  'Secretaria de Infraestrutura (SEINFRA)',
+  'Hospital Municipal São José (HMSJ)',
+  'Companhia Águas de Joinville (CAJ)',
+  'Detrans Joinville',
   'Interno • GIHS Matriz'
 ];
 
@@ -83,6 +87,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   isOpen,
   currentUser,
   prefilledSector,
+  prefilledClient,
   onClose,
   onSuccess
 }) => {
@@ -98,7 +103,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   })();
 
   const [subject, setSubject] = useState('');
-  const [client, setClient] = useState('');
+  const [client, setClient] = useState(prefilledClient || '');
   const [sector, setSector] = useState<Sector>(initialSector);
   const [serviceClassification, setServiceClassification] = useState<string>(() => {
     const srvs = getServicesForSector(initialSector);

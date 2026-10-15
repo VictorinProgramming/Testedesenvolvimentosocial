@@ -99,7 +99,7 @@ export const inventoryAgentController = {
 
       return res.json({
         status: 'ok',
-        next_heartbeat_interval_sec: 60,
+        next_heartbeat_interval_sec: 3600,
         request_full_inventory: result.requestFullInventory,
         server_time: new Date().toISOString()
       });
@@ -293,6 +293,35 @@ export const inventoryAgentController = {
   },
 
   /**
+   * SUPER_ADMIN: Força a atualização do heartbeat de um agente
+   * POST /api/inventory-agents/:id/force-heartbeat
+   */
+  async forceHeartbeat(req: Request, res: Response) {
+    try {
+      const ok = await inventoryAgentRepository.recordManualHeartbeat(req.params.id);
+      if (ok) {
+        const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+        await recordSecurityAudit({
+          action: 'INVENTORY_AGENT_FORCE_HEARTBEAT',
+          category: 'DBA',
+          user_name: (req as any).user?.name || 'SUPER_ADMIN',
+          ip_address: clientIp,
+          severity: 'Info',
+          details: { agentId: req.params.id }
+        });
+      }
+      return res.json({
+        success: ok,
+        message: ok
+          ? 'Heartbeat forçado e atualizado com sucesso no servidor!'
+          : 'Falha ao forçar heartbeat. Agente não encontrado.'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  /**
    * SUPER_ADMIN: Resolução de conflito de identidade
    * POST /api/inventory-agents/conflicts/:id/resolve
    */
@@ -341,7 +370,7 @@ export const inventoryAgentController = {
     const apiKey = (req.query.apiKey as string) || AGENT_SHARED_SECRET;
 
     if (req.query.download === 'true') {
-      res.setHeader('Content-Disposition', 'attachment; filename="install-service.ps1"');
+      res.setHeader('Content-Disposition', 'attachment; filename="Instalar-Agente-GIHS.ps1"');
     }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
 
@@ -350,7 +379,9 @@ export const inventoryAgentController = {
       let scriptContent = fs.readFileSync(scriptPath, 'utf8');
       scriptContent = scriptContent.replace(/__GIHS_SERVER_URL__/g, serverUrl);
       scriptContent = scriptContent.replace(/__GIHS_API_KEY__/g, apiKey);
-      return res.send(scriptContent);
+      // Garante quebras de linha Windows CRLF para compatibilidade perfeita no PowerShell
+      const crlfContent = scriptContent.replace(/\r?\n/g, '\r\n');
+      return res.send(crlfContent);
     } catch (err: any) {
       console.error('Error reading install-agent.ps1:', err?.message);
       return res.status(500).send('# Erro ao ler instalador do agente PowerShell');
@@ -396,98 +427,134 @@ export const inventoryAgentController = {
       console.error('Error reading install-agent.ps1 for bat generation:', err?.message);
     }
 
-    const rawB64 = Buffer.from(psContent, 'utf8').toString('base64');
-    const b64 = rawB64.match(/.{1,64}/g)?.join('\r\n') || rawB64;
+    // Dividir em chunks de 64 caracteres para certutil -decode (100% compativel com o limite de 8191 caracteres do cmd.exe)
+    const b64 = Buffer.from(psContent, 'utf8').toString('base64');
+    const chunks = b64.match(/.{1,64}/g) || [];
+    const b64EchoLines = chunks.map(c => `echo ${c}>> "%TEMP%\\gihs_agent.b64"`).join('\r\n');
 
     const bat = `@echo off
-setlocal EnableDelayedExpansion
-chcp 65001 >nul
+setlocal EnableExtensions
+chcp 65001 >nul 2>&1
 title GIHS Enterprise Inventory Agent — Instalador Oficial
 
-:: 1. Verificacao de privilegios de Administrador e auto-elevacao automatica (UAC)
+:: 1. Verificacao de privilegios de Administrador com auto-elevacao UAC
 net session >nul 2>&1
-if %errorLevel% neq 0 (
+if %errorlevel% neq 0 (
     echo ========================================================================
     echo   GIHS SYSTEM - SOLICITANDO ELEVACAO DE ADMINISTRADOR...
     echo ========================================================================
     echo Por favor, confirme o prompt do Windows (Controle de Conta de Usuario - UAC)...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%COMSPEC%' -ArgumentList '/k', '\"\"%~f0\"\"' -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c \"\"\"%~f0\"\"\"' -Verb RunAs" 2>nul
     exit /b
 )
 
+cd /d "%~dp0"
 cls
 echo ========================================================================
 echo   GIHS SYSTEM - AGENTE NATIVO DE INVENTARIO DE TI (WINDOWS)
+echo   Compativel com Dominio (AD), Workgroup e Maquinas Fora de Dominio
 echo ========================================================================
 echo Servidor Central: ${serverUrl}
 echo.
-echo [1/3] Extraindo componentes do instalador integrado...
+echo [1/3] Preparando diretorio do agente...
 
-set "GIHS_TEMP_DIR=%TEMP%\\GIHS_Installer_%RANDOM%"
-if not exist "%GIHS_TEMP_DIR%" mkdir "%GIHS_TEMP_DIR%"
-set "GIHS_PS=%GIHS_TEMP_DIR%\\install-agent.ps1"
+set "GIHS_AGENT_DIR=%ProgramData%\\GIHS\\Agent"
+if not exist "%GIHS_AGENT_DIR%" mkdir "%GIHS_AGENT_DIR%" >nul 2>&1
+if not exist "%GIHS_AGENT_DIR%" (
+    set "GIHS_AGENT_DIR=%LocalAppData%\\GIHS\\Agent"
+    if not exist "%GIHS_AGENT_DIR%" mkdir "%GIHS_AGENT_DIR%" >nul 2>&1
+)
+set "GIHS_PS_FILE=%GIHS_AGENT_DIR%\\install-agent.ps1"
 
-:: Metodo Primario: Decodificacao nativa ultra-rapida via certutil
-certutil.exe -decode "%~f0" "%GIHS_PS%" >nul 2>&1
+echo [2/3] Instalando componentes do coletor nativo...
+:: Metodo 1: Decodificacao local via certutil (100%% offline, compativel com Workgroup e caminhos com espacos)
+if exist "%TEMP%\\gihs_agent.b64" del "%TEMP%\\gihs_agent.b64" >nul 2>&1
+echo -----BEGIN CERTIFICATE-----> "%TEMP%\\gihs_agent.b64"
+${b64EchoLines}
+echo -----END CERTIFICATE----->> "%TEMP%\\gihs_agent.b64"
+certutil -decode "%TEMP%\\gihs_agent.b64" "%GIHS_PS_FILE%" >nul 2>&1
+if exist "%TEMP%\\gihs_agent.b64" del "%TEMP%\\gihs_agent.b64" >nul 2>&1
 
-:: Metodo Secundario de contingencia via PowerShell
-if not exist "%GIHS_PS%" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$f='%~f0'; if (Test-Path $f) { $lines = [System.IO.File]::ReadAllLines($f); $idx1 = [System.Array]::IndexOf($lines, '-----BEGIN CERTIFICATE-----'); $idx2 = [System.Array]::IndexOf($lines, '-----END CERTIFICATE-----'); if ($idx1 -ge 0 -and $idx2 -gt $idx1) { $payload = [System.String]::Concat($lines[($idx1 + 1)..($idx2 - 1)]).Trim(); [System.IO.File]::WriteAllBytes('%GIHS_PS%', [System.Convert]::FromBase64String($payload)) } }"
+:: Metodo 2: Se certutil falhar, download direto via HTTPS com suporte a TLS 1.2
+if not exist "%GIHS_PS_FILE%" (
+    echo [*] Tentando download direto via HTTPS...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; try { [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} } catch {}; (New-Object Net.WebClient).DownloadFile('${serverUrl}/api/agent/install.ps1', '%GIHS_PS_FILE%')" >nul 2>&1
 )
 
-if not exist "%GIHS_PS%" (
-    echo [ERRO] Nao foi possivel extrair os arquivos do instalador.
+:: Metodo 3: Fallback via curl nativo do Windows 10/11
+if not exist "%GIHS_PS_FILE%" (
+    echo [*] Tentando download via curl...
+    curl.exe -s -k "${serverUrl}/api/agent/install.ps1" -o "%GIHS_PS_FILE%" >nul 2>&1
+)
+
+if not exist "%GIHS_PS_FILE%" (
+    echo.
+    echo [ERRO] Nao foi possivel gravar o instalador em %GIHS_AGENT_DIR%.
+    echo Verifique as permissoes de Administrador do Windows.
+    echo.
     pause
     exit /b 1
 )
 
-echo [2/3] Coletando Hardware, Softwares, Discos e Seguranca...
-echo [3/3] Configurando inicializacao automatica com Administrador e Icone na Barra de Tarefas...
+echo [3/3] Executando inventario de Hardware, Softwares e ativando servico...
 echo.
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GIHS_PS%" -ServerUrl "${serverUrl}" -ApiKey "${apiKey}"
-
-rd /s /q "%GIHS_TEMP_DIR%" >nul 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GIHS_PS_FILE%" -ServerUrl "${serverUrl}" -ApiKey "${apiKey}"
 
 echo.
 echo ========================================================================
 echo   INSTALACAO CONCLUIDA COM SUCESSO!
-echo   [OK] Agente gravado em C:\\ProgramData\\GIHS\\Agent
-echo   [OK] Tarefa no Agendador do Windows com Administrador pre-definido.
-echo   [OK] Icone preparado para a barra de tarefas (bandeja do sistema).
+echo   [OK] Agente gravado em %GIHS_AGENT_DIR%
+echo   [OK] Coleta de Hardware, Softwares e Seguranca executada
+echo   [OK] Servico configurado para inicializacao automatica 24/7
 echo ========================================================================
 echo.
-echo ------------------------------------------------------------------------
-echo  ATENCAO: E NECESSARIO REINICIAR O COMPUTADOR PARA APLICAR AS
-echo  CONFIGURACOES DE SERVICO E CARREGAR O AGENTE NA BANDEJA DO SISTEMA!
-echo ------------------------------------------------------------------------
-echo.
-
-choice /c SN /m "Deseja reiniciar o computador agora [S=Sim (Recomendado), N=Nao]?"
-if errorlevel 2 goto :noreboot
-if errorlevel 1 goto :doreboot
-
-:doreboot
-echo.
-echo [!] Reiniciando o computador em 10 segundos para aplicar as configuracoes...
-shutdown.exe /r /t 10 /c "Reiniciando para concluir a ativacao do Agente de Inventario GIHS..."
-echo Pressione qualquer tecla para manter a janela aberta ou aguarde.
-pause
+echo Pressione qualquer tecla para fechar esta janela...
+pause >nul
 exit /b 0
-
-:noreboot
-echo.
-echo [!] Por favor, lembre-se de reiniciar seu computador assim que possivel
-echo     para que o Agente GIHS inicialize com privilegios de Administrador.
-echo.
-pause
-exit /b 0
-
------BEGIN CERTIFICATE-----
-${b64}
------END CERTIFICATE-----
 `;
-    return res.send(bat);
+
+    const crlfBat = bat.replace(/\r?\n/g, '\r\n');
+    return res.send(crlfBat);
+  },
+
+  /**
+   * Endpoint de Download do Script de Forçar Heartbeat .BAT para Windows
+   * GET /api/agent/force-heartbeat.bat
+   */
+  async serveForceHeartbeatBat(req: Request, res: Response) {
+    let serverUrl = (req.query.serverUrl as string)?.trim();
+    if (!serverUrl && req.headers['origin']) {
+      serverUrl = req.headers['origin'] as string;
+    }
+    if (!serverUrl) {
+      const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+      const host = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'localhost:3000';
+      serverUrl = `${protocol}://${host}`;
+    }
+    serverUrl = serverUrl.replace(/\/+$/, '');
+    const apiKey = (req.query.apiKey as string) || AGENT_SHARED_SECRET;
+
+    const isCmd = req.path.endsWith('.cmd');
+    const filename = isCmd ? 'Forcar-Heartbeat.cmd' : 'Forcar-Heartbeat.bat';
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/octet-stream; charset=utf-8');
+
+    const bat = `@echo off
+chcp 65001 >nul
+title GIHS Agent - Forcar Heartbeat em Tempo Real
+echo ========================================================================
+echo   GIHS SYSTEM - FORCAR HEARTBEAT EM TEMPO REAL
+echo   Origem: C:\\ProgramData\\GIHS\\Agent\\GIHS-Inventario-Real.json
+echo   Ciclo de Heartbeat: 1:00 em 1:00 hora (Automatico)
+echo ========================================================================
+echo.
+echo [+] Lendo telemetria em tempo real de C:\\ProgramData\\GIHS\\Agent\\GIHS-Inventario-Real.json...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$f='C:\\ProgramData\\GIHS\\Agent\\install-agent.ps1'; if (Test-Path $f) { . $f -ServerUrl '${serverUrl}' -ApiKey '${apiKey}' -OnlyFunctions; Invoke-GIHSHeartbeatFromRealJson -TargetUrl '${serverUrl}' -TargetKey '${apiKey}' -JsonFile 'C:\\ProgramData\\GIHS\\Agent\\GIHS-Inventario-Real.json' } else { Write-Warning 'Agente GIHS nao encontrado em C:\\ProgramData\\GIHS\\Agent. Instale o agente primeiro.' }"
+echo.
+pause
+`;
+    return res.send(bat.replace(/\r?\n/g, '\r\n'));
   },
 
   /**

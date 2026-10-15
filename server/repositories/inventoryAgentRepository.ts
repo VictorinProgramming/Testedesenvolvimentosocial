@@ -153,7 +153,7 @@ export const inventoryAgentRepository = {
         a.agent_version,
         CASE 
           WHEN a.agent_status = 'CONFLICT' THEN 'CONFLICT'
-          WHEN a.last_heartbeat < (NOW() - INTERVAL '15 minutes') THEN 'OFFLINE'
+          WHEN a.last_heartbeat < (NOW() - INTERVAL '75 minutes') THEN 'OFFLINE'
           ELSE a.agent_status
         END AS agent_status,
         a.security_status,
@@ -250,8 +250,8 @@ export const inventoryAgentRepository = {
       SELECT 
         COUNT(*) as total_agents,
         COUNT(CASE WHEN agent_status = 'CONFLICT' THEN 1 END) as conflict_count,
-        COUNT(CASE WHEN agent_status != 'CONFLICT' AND last_heartbeat >= (NOW() - INTERVAL '15 minutes') THEN 1 END) as online_count,
-        COUNT(CASE WHEN agent_status != 'CONFLICT' AND (last_heartbeat < (NOW() - INTERVAL '15 minutes') OR agent_status = 'OFFLINE') THEN 1 END) as offline_count,
+        COUNT(CASE WHEN agent_status != 'CONFLICT' AND last_heartbeat >= (NOW() - INTERVAL '75 minutes') THEN 1 END) as online_count,
+        COUNT(CASE WHEN agent_status != 'CONFLICT' AND (last_heartbeat < (NOW() - INTERVAL '75 minutes') OR agent_status = 'OFFLINE') THEN 1 END) as offline_count,
         COUNT(CASE WHEN security_status = 'PROTEGIDO' THEN 1 END) as protected_count,
         COUNT(CASE WHEN security_status IN ('ALERTA', 'VULNERAVEL') THEN 1 END) as alert_count,
         COALESCE(SUM((memory_info->>'total_bytes')::BIGINT), 0) as total_ram_bytes,
@@ -321,6 +321,22 @@ export const inventoryAgentRepository = {
       success: true,
       requestFullInventory: agent.request_full_inventory || false
     };
+  },
+
+  /**
+   * Força a atualização de Heartbeat de um agente existente (via painel administrativo)
+   */
+  async recordManualHeartbeat(id: string): Promise<boolean> {
+    const res = await query(`
+      UPDATE gihs_core.inventory_agents
+      SET 
+        last_heartbeat = CURRENT_TIMESTAMP,
+        agent_status = CASE WHEN agent_status = 'CONFLICT' THEN 'CONFLICT' ELSE 'ONLINE' END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id;
+    `, [id]);
+    return (res.rowCount || 0) > 0;
   },
 
   /**

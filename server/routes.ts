@@ -10,6 +10,7 @@ import { settingsRepository } from './repositories/settingsRepository.ts';
 import { knowledgeRepository } from './repositories/knowledgeRepository.ts';
 import { onCallRepository } from './repositories/onCallRepository.ts';
 import { mobilityRepository } from './repositories/mobilityRepository.ts';
+import { clientsRepository } from './repositories/clientsRepository.ts';
 import { KNOWLEDGE_BASE_DATA } from '../src/data/knowledgeBase.ts';
 import { checkDatabaseConnection, query } from './db.ts';
 import { recordSecurityAudit } from './security.ts';
@@ -414,8 +415,13 @@ export async function deleteUser(req: Request, res: Response) {
  */
 export async function getPontoRecords(req: Request, res: Response) {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
-    const records = await pontoRepository.findAll(limit);
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 1000;
+    const userId = req.query.userId as string;
+    const name = (req.query.name || req.query.collaboratorName) as string;
+    const month = req.query.month as string;
+    const date = req.query.date as string;
+
+    const records = await pontoRepository.findAll(limit, { userId, name, month, date });
     res.json({ success: true, count: records.length, data: records });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -424,7 +430,7 @@ export async function getPontoRecords(req: Request, res: Response) {
 
 export async function getPontoByUserId(req: Request, res: Response) {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 500;
     const records = await pontoRepository.findByUserId(req.params.userId, limit);
     res.json({ success: true, count: records.length, data: records });
   } catch (err: any) {
@@ -436,6 +442,116 @@ export async function createPontoRecord(req: Request, res: Response) {
   try {
     const created = await pontoRepository.create(req.body);
     res.status(201).json({ success: true, data: created });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function seedPontoMonth(req: Request, res: Response) {
+  try {
+    const { userId, month } = req.body;
+    const result = await pontoRepository.seedMonthPunches(userId, month);
+    res.json({
+      success: true,
+      inserted: result.inserted,
+      message: `${result.inserted} batidas de ponto em conformidade CLT/Portaria 671 foram gravadas com sucesso no PostgreSQL!`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function getPontoConfig(req: Request, res: Response) {
+  try {
+    const config = await settingsRepository.getPontoConfig();
+    res.json({ success: true, data: config });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function updatePontoConfig(req: Request, res: Response) {
+  try {
+    const updated = await settingsRepository.setPontoConfig(req.body);
+    res.json({ success: true, data: updated, message: 'Configurações de ponto salvas com sucesso no PostgreSQL!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function resetPontoConfig(req: Request, res: Response) {
+  try {
+    const defaultConfig = {
+      workSchedule: {
+        standardEntry: '08:00',
+        standardBreakStart: '12:00',
+        standardBreakEnd: '13:00',
+        standardExit: '18:00',
+        weeklyHours: 44,
+        dailyHours: 8.8,
+        scheduleType: 'CLT_PADRAO',
+        workDays: ['SEG', 'TER', 'QUA', 'QUI', 'SEX'],
+        minimumBreakMinutes: 60
+      },
+      tolerances: {
+        entryToleranceMinutes: 5,
+        dailyToleranceMinutes: 10,
+        exitToleranceMinutes: 5,
+        antiDuplicateMinutes: 2,
+        allowEarlyPunch: true,
+        notifyApproachingBreakEnd: true
+      },
+      biometry: {
+        minConfidenceScore: 85,
+        requireAntiSpoofing: true,
+        strictMode: false,
+        allowFallbackManual: true,
+        requireCameraFlashValidation: true
+      },
+      geofencing: {
+        requireGps: true,
+        allowExternalPunch: true,
+        maxAccuracyMeters: 100,
+        authorizedLocations: [
+          {
+            id: 'loc-matriz',
+            name: 'Sede Matriz GIHS - São Paulo',
+            address: 'Av. Paulista, 1000 - Bela Vista, São Paulo - SP',
+            latitude: -23.561684,
+            longitude: -46.655981,
+            radiusMeters: 250,
+            isHeadquarters: true
+          },
+          {
+            id: 'loc-datacenter',
+            name: 'Polo Operacional & Data Center',
+            address: 'Rua do Suporte Técnico, 250 - Tamboré, Barueri - SP',
+            latitude: -23.501234,
+            longitude: -46.852345,
+            radiusMeters: 200,
+            isHeadquarters: false
+          }
+        ],
+        corporateIpWhitelist: ['189.40.12.98', '201.55.10.22', '127.0.0.1']
+      },
+      overtimeAndBank: {
+        regime: 'BANCO_DE_HORAS',
+        maxDailyOvertimeMinutes: 120,
+        weekdayOvertimePercentage: 50,
+        weekendOvertimePercentage: 100,
+        bankCompensationMonths: 6,
+        closingDayOfMonth: 25
+      },
+      adjustmentPolicies: {
+        maxDaysToRequestAdjustment: 2,
+        requireAttachmentForMedicalLeave: true,
+        autoApproveWithinTolerance: false,
+        approverRole: 'GESTOR_OU_ADMIN'
+      },
+      updated_at: new Date().toISOString()
+    };
+    const updated = await settingsRepository.setPontoConfig(defaultConfig);
+    res.json({ success: true, data: updated, message: 'Parâmetros legais da Portaria 671 MTE restaurados com sucesso!' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1261,4 +1377,65 @@ export async function clearMobilityData(req: Request, res: Response) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
+// ==========================================
+// Gestão de Clientes & Secretarias Municipais (Joinville)
+// ==========================================
+export async function getClients(req: Request, res: Response) {
+  try {
+    const clients = await clientsRepository.findAll();
+    res.json({ success: true, count: clients.length, data: clients });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function getClientById(req: Request, res: Response) {
+  try {
+    const client = await clientsRepository.findById(req.params.id);
+    if (!client) return res.status(404).json({ success: false, error: 'Órgão / Secretaria não encontrado' });
+    res.json({ success: true, data: client });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function createClient(req: Request, res: Response) {
+  try {
+    const created = await clientsRepository.create(req.body);
+    res.status(201).json({ success: true, data: created });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function updateClient(req: Request, res: Response) {
+  try {
+    const updated = await clientsRepository.update(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ success: false, error: 'Órgão / Secretaria não encontrado' });
+    res.json({ success: true, data: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function deleteClient(req: Request, res: Response) {
+  try {
+    const deleted = await clientsRepository.delete(req.params.id);
+    res.json({ success: deleted });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function seedClients(req: Request, res: Response) {
+  try {
+    const result = await clientsRepository.seedAll();
+    const clients = await clientsRepository.findAll();
+    res.json({ success: true, ...result, data: clients });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 

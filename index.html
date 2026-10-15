@@ -16,6 +16,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Suprime avisos e erros inofensivos de WebSocket HMR no ambiente de sandbox do AI Studio
+      window.addEventListener('error', function(event) {
+        if (event && event.message && (
+          event.message.indexOf('WebSocket') !== -1 ||
+          event.message.indexOf('@vite/client') !== -1 ||
+          event.message.indexOf('createWebSocketModuleRunnerTransport') !== -1
+        )) {
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event && event.reason && (
+          String(event.reason).indexOf('WebSocket') !== -1 ||
+          String(event.reason).indexOf('@vite/client') !== -1
+        )) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body class="bg-[#01122D] text-slate-100 antialiased selection:bg-[#0067FC]/40 selection:text-white">
     <div id="root"></div>

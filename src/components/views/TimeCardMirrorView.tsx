@@ -20,7 +20,9 @@ import {
   ChevronRight,
   Eye,
   Eraser,
-  Printer
+  Printer,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { dbService } from '../../services/dbService';
 import { pontoService, PontoRecord } from '../../services/pontoService';
@@ -97,8 +99,11 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
 }) => {
   const [dbUsers, setDbUsers] = useState<Collaborator[]>([]);
   const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string>(currentUser.name);
-  const [selectedMonth, setSelectedMonth] = useState<string>('09/2026'); // MM/YYYY
+  const [selectedMonth, setSelectedMonth] = useState<string>('10/2026'); // MM/YYYY
   const [pontoRecords, setPontoRecords] = useState<PontoRecord[]>([]);
+  const [isSyncingPostgres, setIsSyncingPostgres] = useState(false);
+  const [isSeedingPostgres, setIsSeedingPostgres] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Modal de Assinatura Digital
   const [signModalOpen, setSignModalOpen] = useState<boolean>(false);
@@ -137,7 +142,7 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
     return found || currentUser;
   }, [dbUsers, selectedCollaboratorName, currentUser]);
 
-  // 2. Carregar e assinar dados de batidas de ponto em tempo real
+  // 2. Carregar e assinar dados de batidas de ponto em tempo real do PostgreSQL
   const reloadPunches = () => {
     const all = pontoService.getAllRecords();
     setPontoRecords(all);
@@ -145,18 +150,46 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
 
   useEffect(() => {
     reloadPunches();
-    // Também busca registros atualizados do backend
-    dbService.getPontoRecords().then((remote) => {
-      if (remote && remote.length > 0) {
-        reloadPunches();
-      }
+    pontoService.fetchFromPostgres(activeCollaborator?.id).then(() => {
+      reloadPunches();
     }).catch(() => {});
 
     const unsubPonto = pontoService.subscribe(() => {
       reloadPunches();
     });
     return () => unsubPonto();
-  }, []);
+  }, [activeCollaborator?.id, selectedMonth]);
+
+  const handleSyncPostgres = async () => {
+    setIsSyncingPostgres(true);
+    setSyncFeedback(null);
+    try {
+      await pontoService.fetchFromPostgres(activeCollaborator?.id);
+      reloadPunches();
+      setSyncFeedback('✓ Espelho atualizado com o PostgreSQL!');
+    } catch {
+      setSyncFeedback('✕ Erro ao consultar PostgreSQL.');
+    } finally {
+      setIsSyncingPostgres(false);
+      setTimeout(() => setSyncFeedback(null), 3500);
+    }
+  };
+
+  const handleSeedMonthPostgres = async () => {
+    setIsSeedingPostgres(true);
+    setSyncFeedback(null);
+    try {
+      const resp = await pontoService.seedMonthInPostgres(activeCollaborator?.id, selectedMonth);
+      await pontoService.fetchFromPostgres(activeCollaborator?.id);
+      reloadPunches();
+      setSyncFeedback(`✓ ${resp.inserted || 'Batidas'} gravadas no PostgreSQL para ${activeCollaborator.name}!`);
+    } catch {
+      setSyncFeedback('✕ Erro ao popular registros no PostgreSQL.');
+    } finally {
+      setIsSeedingPostgres(false);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
 
   // 3. Carregar assinatura digital persistida do colaborador para o mês
   const signatureStorageKey = `bycomp_timecard_sig_${activeCollaborator.id || activeCollaborator.name}_${selectedMonth}`;
@@ -517,9 +550,13 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 text-[#37558d] border border-blue-200 font-bold">
                   PORTARIA 671 MTE (REP-P)
                 </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <Database className="w-3 h-3 text-emerald-600" />
+                  <span>Base Oficial PostgreSQL</span>
+                </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Apuração em tempo real integrada aos registros biométricos faciais e banco de horas
+                Apuração em tempo real com batidas armazenadas na tabela <code className="text-[#37558d] font-bold">ponto_records</code> do PostgreSQL
               </p>
             </div>
           </div>
@@ -537,7 +574,7 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
             >
               {dbUsers.map((c) => (
                 <option key={c.id || c.name} value={c.name} className="bg-white text-slate-800">
-                  {c.name} ({c.sector})
+                  {c.name} ({c.sector || 'Geral'})
                 </option>
               ))}
             </select>
@@ -550,11 +587,32 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-transparent text-xs font-bold text-[#37558d] focus:outline-none cursor-pointer font-mono"
             >
+              <option value="10/2026" className="bg-white">Outubro / 2026 (Atual)</option>
               <option value="09/2026" className="bg-white">Setembro / 2026</option>
               <option value="08/2026" className="bg-white">Agosto / 2026</option>
               <option value="07/2026" className="bg-white">Julho / 2026</option>
             </select>
           </div>
+
+          <button
+            onClick={handleSyncPostgres}
+            disabled={isSyncingPostgres}
+            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#37558d] border border-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            title="Recarregar batidas salvas no PostgreSQL"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPostgres ? 'animate-spin' : ''}`} />
+            <span>Sincronizar PostgreSQL</span>
+          </button>
+
+          <button
+            onClick={handleSeedMonthPostgres}
+            disabled={isSeedingPostgres}
+            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            title="Grava jornadas CLT padrão (08h às 18h) no PostgreSQL para este colaborador e mês"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-indigo-600 ${isSeedingPostgres ? 'animate-spin' : ''}`} />
+            <span>{isSeedingPostgres ? 'Gravando no Postgres...' : 'Popular Espelho no Postgres'}</span>
+          </button>
 
           <button
             onClick={handleDownloadReport}
@@ -576,6 +634,13 @@ export const TimeCardMirrorView: React.FC<TimeCardMirrorViewProps> = ({
           )}
         </div>
       </div>
+
+      {syncFeedback && (
+        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center gap-2 animate-in fade-in shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>{syncFeedback}</span>
+        </div>
+      )}
 
       {/* 4 Cards Principais: Saldo do Mês, Saldo Acumulado, Carga Contratada e Assinatura Digital */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
